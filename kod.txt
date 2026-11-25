@@ -1,0 +1,81 @@
+﻿PROC IMPORT OUT= work.dane 
+            DATAFILE= "C:\Users\Milosz\Desktop\projekt\dane.xlsx" 
+            DBMS=XLSX REPLACE;
+     GETNAMES=YES;
+RUN;
+
+data analiza;
+    set dane;
+    if gender = 2;
+    if not missing(ch1_y) then event = 1; else event = 0;
+    
+    birth_date_decimal = birth_y + (coalesce(birth_m, 6) / 12);
+    int_date_decimal = int_y + (coalesce(int_m, 6) / 12);
+    
+    if event = 1 then do;
+        child_date_decimal = ch1_y + (coalesce(ch1_m, 6) / 12);
+        t = child_date_decimal - birth_date_decimal;
+    end;
+    else t = int_date_decimal - birth_date_decimal;
+    
+    
+    array vars_to_clean[*] edu mar_stat par_stat wrk_activity wrk_hours wrk_life_bal1 wrk_life_bal4;
+    do i = 1 to dim(vars_to_clean);
+        if vars_to_clean[i] > 90 then vars_to_clean[i] = .;
+    end;
+    drop i;
+    
+    if t >= 15;
+    log_t = log(t);
+    id = N; 
+run;
+
+proc surveyselect data=analiza method=srs n=1500 seed=123 out=analiza_bayes;
+run;
+
+proc phreg data=analiza_bayes;
+        class edu(ref='1') mar_stat(ref='1') par_stat(ref='4') wrk_activity;
+    
+    
+    model t * event(0) = edu mar_stat par_stat wrk_activity wrk_hours wrk_life_bal1 wrk_life_bal4;
+run;
+
+
+proc phreg data=analiza_bayes;
+    class edu(ref='1') mar_stat(ref='1') par_stat(ref='4') wrk_activity;
+    model t * event(0) = edu mar_stat par_stat wrk_activity wrk_hours wrk_life_bal1 wrk_life_bal4;
+    
+    
+    bayes seed=123 
+          nbi=1000 
+          nmc=10000  
+          thin=5     
+          coeffprior=normal 
+          diagnostics=all 
+          statistics=all;
+          
+    ods output PosteriorSample=PS_COX;
+run;
+
+
+proc lifetest data=work.ggs_kobiety
+              method=lt
+              width=5
+              plots=(s h p);
+    time time*status(0);
+run;
+
+
+proc lifetest data=work.ggs_kobiety
+              method=pl
+              plots=(s, ls, lls);
+    time time*status(0);
+run;
+
+
+proc lifetest data=work.ggs_kobiety
+              method=pl
+              plots=(survival);
+    time time*status(0);
+    strata edu;
+run;
